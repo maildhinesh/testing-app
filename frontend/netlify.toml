@@ -1,0 +1,22 @@
+# Netlify config — set the site's "Base directory" to `frontend/` in the dashboard.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# --- API access ---
+# Option A (same-origin, no CORS): uncomment and point at your backend. Requests to
+# /api/* are proxied server-side, so you do NOT need VITE_API_BASE_URL.
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://your-backend.onrender.com/api/:splat"
+#   status = 200
+#   force = true
+#
+# Option B (cross-origin): leave the rewrite above commented and instead set the
+# build env var VITE_API_BASE_URL=https://your-backend.onrender.com/api.
+
+# SPA fallback — required for client-side routing (must be the LAST rule).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

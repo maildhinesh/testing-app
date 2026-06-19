@@ -1,0 +1,49 @@
+Design an online test application. 
+Users should be registered to take the test. Registration form should have the following
+    1. First name
+    2. Last name
+    3. Nilai (Class)
+    4. Email Address
+    5. Confirm Email Address
+    Add a step to validate the email. 
+The Test Admin will release the test to the registered users on the testing day. 
+
+Test has 6 categories. 
+Category 1 - Alphabets (10 questions) - Multiple Choice - 10 mins
+Category 2 - Grammar (10 Questions) - Multiple Choice - 10 mins
+Category 3 - Translation (10 Questions) - Multiple Choice - 10 mins
+Category 4 - Comprehension (1 paragraph and 5 questions) - Multiple Choice - 15 mins
+Category 5 - Story writing - Freestyle typing - 30 mins
+Category 6 - Oral test - only score is added by the test admin for each registered user. 
+
+Category 1 will have two difficulties - easy(1 point each) and moderate (2 points each)
+All other categories will have three difficulties - easy (1 point), moderate(2 points) & hard (3 points). 
+Wrong answers are scored at a negative 1. 
+
+The questions for Category 1, 2 and 3 are stored in the below format in a database table
+q_code, q_category,q_difficulty,question_text, opt_a,opt_b,opt_c,opt_d,answer - tie these with the test_id. 
+
+5 random easy questions from category 1 are shown to each registerd users (the selection/order of the questions is unique to each registered user)
+If the user has scored 4 out of the 5, then the difficulty should switch to moderate so the next 5 questions in the cateogry should be from the moderate difficulty list. If the user failed to get 4 out of 5 right, then it should continue with easy questions. 
+If the user has reached "Moderate" in Category 1, Category 2 should start with moderate for the user. Others continue with easy selection. In category 2, if the user has answered 4 out of 5 right, then the difficulty should switch to next category. 
+This pattern should be followed for Category 3 too. 
+
+At the end of the catgeory 3, the difficulty level is set at whatever the user is currently at. 
+
+Before manually conducting the Oral test, the Test admin should be able to see what difficult level each user is at (so that the oral questions can be set at that level). 
+
+The test admin should have a dashboard view of tests scheduled and statistics on completed tests. 
+Test Admin should be able to create a new test and schedule it. 
+For each test, should be able to see the number of users registered, pending registrations, approve registration,  manually register a user, reject a user registration, release the test to the approved registered users, view the progress of each user during the test, manually enter the score for Category 5 and 6, etc. 
+After the test is complete, the Test Admin should have a means to release the scores to the registered users. 
+An user interface for the Test admin to add/edit the questions - a screen entry for one question at a time, and a means to bulk upload from a CSV file. Bulk upload should upsert to the db. 
+
+The test view - Categories 1, 2 and 3, they see one question at a time on the screen. 
+For category 4, they will see the paragraph and all 5 questions under the category (for this questions propose a db table design)
+Category 5 - the question and a text area to enter their answer. 
+The test should time out at 75 mins (10+10+10+15+30) and the user shouldn't be taken to Category 6 page
+Category 6 - just a screen which says their written part is over and should head to oral part. 
+
+
+
+

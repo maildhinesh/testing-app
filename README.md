@@ -75,20 +75,32 @@ deploying is now pure configuration.
 
 ## Recommended free stack (2026)
 
+The repo is set up to deploy **both the backend and the frontend on [Vercel](https://vercel.com)**
+as two separate projects from the same Git repo (backend as a Python serverless function,
+frontend as a static SPA). This is the path the step-by-step below follows.
+
 | Part | Service | Free-tier reality |
 |---|---|---|
-| **Database** | [Neon](https://neon.tech) (serverless Postgres) | Generous; auto-suspends when idle, wakes in ~1s |
-| **Backend** (FastAPI) | [Render](https://render.com) Web Service | Spins down after ~15 min idle → ~50s cold start |
-| **Frontend** (static) | [Vercel](https://vercel.com) / [Netlify](https://netlify.com) / [Cloudflare Pages](https://pages.cloudflare.com) | Truly free, fast CDN |
+| **Database** | [Neon](https://neon.tech) (serverless Postgres) | Generous; auto-suspends when idle, wakes in ~1s. **Use the pooled connection string** (see below) |
+| **Backend** (FastAPI) | [Vercel](https://vercel.com) Python serverless function | No always-on server; each request is a short-lived invocation. 60s max per request on the free plan |
+| **Frontend** (static) | [Vercel](https://vercel.com) (or [Netlify](https://netlify.com) / [Cloudflare Pages](https://pages.cloudflare.com)) | Truly free, fast CDN |
 | **Email** (magic links) | [Resend](https://resend.com) (~3k/mo) or [Brevo](https://brevo.com) (300/day) | Required in production — see below |
 
-**Backend alternatives** if Render's cold start is a problem: **Koyeb** (one always-on
-free service) or **Fly.io** (small free allowance).
+**Backend alternatives** if you'd rather run a long-lived server than serverless:
+**[Render](https://render.com)** Web Service (spins down after ~15 min idle → ~50s cold
+start), **Koyeb** (one always-on free service), or **Fly.io** (small free allowance). The
+`backend/Procfile` and `backend/runtime.txt` support these without code changes.
 
 ## Honest caveats about "free"
 
-- **Render cold starts** — fine for casual use, but on an actual exam day the first
-  student hits a ~50s delay while the service wakes. Koyeb avoids this.
+- **Serverless has no warm process.** On Vercel the backend is a function, not a running
+  server, so there is no in-process connection pool and no background work between requests.
+  The app already handles this: `database.py` uses SQLAlchemy `NullPool` (one connection per
+  request, closed on release). **You must pair it with Neon's _pooled_ connection string**
+  (the host contains `-pooler`) so PgBouncer does the real pooling — otherwise concurrent
+  invocations will exhaust Postgres connections.
+- **Cold starts.** The first request after an idle period pays a short function cold-start;
+  a long-lived host (Render/Koyeb) avoids this if it matters for an exam day.
 - **Email is not optional in production.** The console-log fallback only works locally;
   deployed students can't see backend logs, so without a real SMTP provider they will
   never receive their verification or magic links.
@@ -103,9 +115,12 @@ These were added to make the app deploy without further code edits:
 |---|---|
 | `frontend/src/api/client.ts` | API base URL is now `import.meta.env.VITE_API_BASE_URL ?? "/api"` — set `VITE_API_BASE_URL` at build time for cross-origin hosting, or leave it unset and use a host rewrite. |
 | `frontend/.env.example` | Documents `VITE_API_BASE_URL`. |
-| `frontend/netlify.toml`, `frontend/vercel.json` | Build config + **SPA `/index.html` fallback** + an optional `/api/*` → backend rewrite (commented/placeholder). |
-| `backend/runtime.txt`, `backend/.python-version` | Pin Python to **3.12.8** (better wheel coverage than 3.14, avoids source builds). |
-| `backend/Procfile` | `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT` for Procfile-based hosts. |
+| `frontend/netlify.toml`, `frontend/vercel.json` | Build config + **SPA `/index.html` fallback** + an `/api/*` → backend rewrite. `vercel.json` currently points at `https://YOUR-BACKEND-PROJECT.vercel.app/api/$1` — replace that with your real backend URL. |
+| `backend/api/index.py` | **Vercel serverless entrypoint** — re-exports the ASGI `app` from `app.main` so Vercel's Python runtime can serve it. |
+| `backend/vercel.json` | Vercel backend config: routes all paths to the `api/index` function and sets `maxDuration` to 60s. |
+| `backend/app/database.py` | Uses SQLAlchemy `NullPool` so the engine works correctly under serverless (one connection per request). Requires Neon's **pooled** connection string. |
+| `backend/runtime.txt`, `backend/.python-version` | Pin Python to **3.12.8** (better wheel coverage than 3.14, avoids source builds). Vercel reads these to pick the runtime. |
+| `backend/Procfile` | `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT` for Procfile-based hosts (Render/Koyeb/Fly). Not used by Vercel. |
 | `backend/.env.example` | Documents all env vars incl. the new `ENVIRONMENT`. |
 | `.gitignore` | Keeps `.env`, `.venv/`, `node_modules/`, `dist/` out of version control. |
 
@@ -113,9 +128,11 @@ These were added to make the app deploy without further code edits:
 **refuses to boot** if `JWT_SECRET` is still `change-me` or `ADMIN_PASSWORD` is still
 `admin12345`. Locally (`ENVIRONMENT=development`, the default) it only logs a warning.
 
-**Start command** (configuration only): `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-Tables auto-create and the admin auto-bootstraps on first boot via the `lifespan` hook,
-so there is **no separate migration step** to run.
+**No start command on Vercel** — the platform invokes the ASGI `app` exported by
+`backend/api/index.py` directly. (On a long-lived host the start command is
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`.) Tables auto-create and the admin
+auto-bootstraps on first boot via the `lifespan` hook, so there is **no separate migration
+step** to run.
 
 **Choose how the frontend reaches the API:**
 - **Option A (same-origin, no CORS):** keep the relative `/api` and add a host rewrite
@@ -128,54 +145,75 @@ so there is **no separate migration step** to run.
 ### 1. Database — Neon
 
 1. Create a Neon project and a database.
-2. Copy the connection string and convert it to the SQLAlchemy + psycopg2 form:
+2. Copy the **pooled** connection string (Neon's dashboard offers both — pick the one whose
+   host contains `-pooler`; serverless requires it, see the caveats above) and convert it to
+   the SQLAlchemy + psycopg2 form:
 
    ```
-   postgresql+psycopg2://USER:PASSWORD@HOST/DBNAME?sslmode=require
+   postgresql+psycopg2://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require
    ```
 
    (Neon gives you `postgresql://...`; add `+psycopg2` and keep `?sslmode=require`.)
 
-### 2. Backend — Render
+### 2. Backend — Vercel (serverless)
 
-New **Web Service** → connect the repo, set **Root Directory** to `backend/`:
+New **Project** → import the repo, set **Root Directory** to `backend/`. Vercel detects
+the Python function at `api/index.py` and the config in `backend/vercel.json`; there is **no
+build or start command to set**.
 
-- **Build command:** `pip install -r requirements.txt`
-- **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - **Environment variables:**
 
   | Variable | Value |
   |---|---|
   | `ENVIRONMENT` | `production` (enables the default-secret guard) |
-  | `DATABASE_URL` | the Neon string from step 1 |
+  | `DATABASE_URL` | the Neon **pooled** string from step 1 |
   | `JWT_SECRET` | a long random string |
   | `ADMIN_EMAIL` | your admin login email |
   | `ADMIN_PASSWORD` | a strong password |
   | `ADMIN_NAME` | admin display name |
   | `FRONTEND_BASE_URL` | your deployed frontend URL (from step 3) |
-  | `BACKEND_BASE_URL` | this service's URL |
+  | `BACKEND_BASE_URL` | this project's URL (e.g. `https://your-backend.vercel.app`) |
   | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | from step 4 |
   | `SMTP_USE_TLS` | `true` |
 
-After the first deploy, the backend creates its tables and bootstraps the admin account
-automatically. To load demo content you can run `python -m app.seed` once (e.g. via the
-Render shell), or add questions through the admin console.
+After the first deploy, the backend creates its tables and bootstraps the admin account on
+the first request via the `lifespan` hook. To load demo content, run `python -m app.seed`
+once locally against the same `DATABASE_URL`, or add questions through the admin console
+(serverless has no persistent shell).
 
-### 3. Frontend — Vercel / Netlify / Cloudflare Pages
+> Note your backend project's URL — you need it for the frontend rewrite in step 3.
 
-New static site → **Root Directory** `frontend/`:
+### 3. Frontend — Vercel (or Netlify / Cloudflare Pages)
 
-- **Build command:** `npm run build`
-- **Output directory:** `dist`
-- **SPA fallback:** route all paths to `/index.html` (required for client-side routing).
-- **API access:** apply the choice from
-  [Required code changes](#required-code-changes-before-deploying):
-  - *Option A* — add a rewrite, e.g. on **Netlify** (`netlify.toml`):
+New **Project** → import the same repo, set **Root Directory** to `frontend/`. Vercel uses
+`frontend/vercel.json`: build command `npm run build`, output `dist`, the SPA `/index.html`
+fallback, and the `/api/*` → backend rewrite.
+
+- **One required edit:** in `frontend/vercel.json`, replace the placeholder backend host with
+  your real backend URL from step 2:
+
+  ```json
+  {
+    "rewrites": [
+      { "source": "/api/(.*)", "destination": "https://your-backend.vercel.app/api/$1" },
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+  ```
+
+  This keeps the frontend same-origin (the client calls the relative `/api`, no CORS needed).
+
+- **Alternatives:**
+  - *Cross-origin instead of the rewrite* — set the build-time env var
+    `VITE_API_BASE_URL=https://your-backend.vercel.app/api`; CORS is then handled by
+    `FRONTEND_BASE_URL` on the backend.
+  - *Netlify* — `netlify.toml` is already bundled; point its `/api/*` redirect at your
+    backend URL:
 
     ```toml
     [[redirects]]
       from = "/api/*"
-      to = "https://<your-backend>.onrender.com/api/:splat"
+      to = "https://your-backend.vercel.app/api/:splat"
       status = 200
       force = true
 
@@ -184,20 +222,6 @@ New static site → **Root Directory** `frontend/`:
       to = "/index.html"
       status = 200
     ```
-
-    or on **Vercel** (`vercel.json`):
-
-    ```json
-    {
-      "rewrites": [
-        { "source": "/api/(.*)", "destination": "https://<your-backend>.onrender.com/api/$1" },
-        { "source": "/(.*)", "destination": "/index.html" }
-      ]
-    }
-    ```
-
-  - *Option B* — set the build-time env var `VITE_API_BASE_URL=https://<your-backend>.onrender.com/api`
-    (the bundled `netlify.toml` / `vercel.json` already configure the SPA `/index.html` fallback).
 
 ### 4. Email — Resend / Brevo
 

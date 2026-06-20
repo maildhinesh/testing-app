@@ -8,6 +8,7 @@ import type {
   ScoreBreakdown,
   SessionInfo,
   SessionProgress,
+  SessionResponses,
   SessionState,
   StoryPromptOut,
   TestOut,
@@ -159,6 +160,8 @@ export const adminQuestions = {
 // --------------------------- Admin progress ---------------------------
 export const adminProgress = {
   list: (testId: number) => api.get<SessionProgress[]>(`/admin/tests/${testId}/progress`).then((r) => r.data),
+  responses: (sessionId: number) =>
+    api.get<SessionResponses>(`/admin/sessions/${sessionId}/responses`).then((r) => r.data),
   manualScore: (sessionId: number, category: number, score: number) =>
     api.post<SessionProgress>(`/admin/sessions/${sessionId}/manual-score`, { category, score }).then((r) => r.data),
 };

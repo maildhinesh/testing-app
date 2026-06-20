@@ -16,7 +16,14 @@ from ..scoring import (
     grand_total,
     manual_score,
 )
-from ..schemas import ManualScoreIn, SessionProgress
+from ..schemas import (
+    ManualScoreIn,
+    OptionView,
+    ResponseDetail,
+    SessionProgress,
+    SessionResponses,
+    StoryAnswerDetail,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin-progress"])
 
@@ -77,6 +84,60 @@ def progress(test_id: int, db: Session = Depends(get_db), admin: Admin = Depends
             )
         )
     return out
+
+
+@router.get("/sessions/{session_id}/responses", response_model=SessionResponses)
+def session_responses(
+    session_id: int, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)
+):
+    """Everything a student actually answered: MCQs (categories 1-4) and the story (category 5)."""
+    session = db.get(TestSession, session_id)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+
+    details: list[ResponseDetail] = []
+    for a in sorted(session.assignments, key=lambda x: (x.category, x.position)):
+        q = a.question or a.comprehension_question
+        if q is None:
+            continue
+        resp = a.response
+        details.append(
+            ResponseDetail(
+                assignment_id=a.id,
+                category=a.category,
+                difficulty=a.difficulty,
+                position=a.position,
+                q_code=q.q_code,
+                question_text=q.question_text,
+                options=OptionView(a=q.opt_a, b=q.opt_b, c=q.opt_c, d=q.opt_d),
+                correct_answer=q.answer,
+                selected_option=resp.selected_option if resp else None,
+                answered=bool(resp and resp.selected_option is not None),
+                is_correct=bool(resp and resp.is_correct),
+                points_awarded=resp.points_awarded if resp else 0,
+            )
+        )
+
+    story: StoryAnswerDetail | None = None
+    if session.story_responses:
+        sr = session.story_responses[0]
+        story = StoryAnswerDetail(
+            prompt_text=sr.prompt.prompt_text if sr.prompt else "",
+            answer_text=sr.answer_text,
+            submitted_at=sr.submitted_at,
+        )
+
+    reg = session.registration
+    return SessionResponses(
+        session_id=session.id,
+        first_name=reg.first_name,
+        last_name=reg.last_name,
+        nilai=reg.nilai,
+        email=reg.email,
+        status=session.status,
+        responses=details,
+        story=story,
+    )
 
 
 @router.post("/sessions/{session_id}/manual-score", response_model=SessionProgress)

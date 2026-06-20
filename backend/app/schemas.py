@@ -273,6 +273,44 @@ class ManualScoreIn(BaseModel):
     score: int
 
 
+class ResponseDetail(BaseModel):
+    """One MCQ answer (categories 1-4) as seen by the admin."""
+
+    assignment_id: int
+    category: int
+    difficulty: str
+    position: int
+    q_code: str
+    question_text: str
+    options: OptionView
+    correct_answer: str
+    selected_option: str | None
+    answered: bool
+    is_correct: bool
+    points_awarded: int
+
+
+class StoryAnswerDetail(BaseModel):
+    """Category 5 free-text answer."""
+
+    prompt_text: str
+    answer_text: str
+    submitted_at: datetime | None
+
+
+class SessionResponses(BaseModel):
+    """Full breakdown of what a student actually answered."""
+
+    session_id: int
+    first_name: str
+    last_name: str
+    nilai: str
+    email: str
+    status: str
+    responses: list[ResponseDetail]
+    story: StoryAnswerDetail | None
+
+
 class SessionProgress(BaseModel):
     registration_id: int
     session_id: int | None

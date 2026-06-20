@@ -100,6 +100,38 @@ export interface SessionProgress {
   completed_at: string | null;
 }
 
+export interface ResponseDetail {
+  assignment_id: number;
+  category: number;
+  difficulty: string;
+  position: number;
+  q_code: string;
+  question_text: string;
+  options: OptionView;
+  correct_answer: string;
+  selected_option: string | null;
+  answered: boolean;
+  is_correct: boolean;
+  points_awarded: number;
+}
+
+export interface StoryAnswerDetail {
+  prompt_text: string;
+  answer_text: string;
+  submitted_at: string | null;
+}
+
+export interface SessionResponses {
+  session_id: number;
+  first_name: string;
+  last_name: string;
+  nilai: string;
+  email: string;
+  status: string;
+  responses: ResponseDetail[];
+  story: StoryAnswerDetail | null;
+}
+
 // --- Student test taking ---
 export interface OptionView {
   a: string;

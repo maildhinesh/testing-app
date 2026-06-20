@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://testing-app-c7eg.onrender.com/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://YOUR-BACKEND-PROJECT.vercel.app/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
